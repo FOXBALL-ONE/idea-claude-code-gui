@@ -13,6 +13,12 @@ import {
 } from '../utils/virtualCursorUtils.js';
 import type { FileTagInfo } from '../types.js';
 
+interface FileMatch {
+  index: number;
+  path: string;
+  fullMatch: string;
+}
+
 interface UseFileTagsOptions {
   editableRef: React.RefObject<HTMLDivElement | null>;
   getTextContent: () => string;
@@ -121,12 +127,6 @@ export function useFileTags({
      * 3. Choose the longest matching path to handle filenames with spaces correctly
      * 4. Fall back to simple regex matching for paths not in pathMappingRef
      */
-    interface FileMatch {
-      index: number;
-      path: string;
-      fullMatch: string;
-    }
-
     const matches: FileMatch[] = [];
 
     // First pass: Find @ positions and try to match against pathMappingRef
@@ -135,16 +135,13 @@ export function useFileTags({
         let longestMatch: { path: string; length: number } | null = null;
 
         // Try to find the longest matching path from pathMappingRef
+        // Uses startsWith(str, position) to avoid creating substrings
         for (const [key] of pathMappingRef.current) {
-          const pathWithAt = '@' + key;
-          const remainingText = currentText.substring(i);
-
-          // Check if the text at this position matches this path
-          // Match must be followed by space, newline, or end of string
-          if (remainingText.startsWith(pathWithAt)) {
-            const afterPath = remainingText.substring(pathWithAt.length);
-            if (afterPath.length === 0 || afterPath[0] === ' ' || afterPath[0] === '\n') {
-              // This is a valid match
+          // Check if the text at position i matches "@key"
+          if (currentText.startsWith(key, i + 1)) {
+            // Match must be followed by whitespace or end of string
+            const afterChar = currentText[i + 1 + key.length];
+            if (afterChar === undefined || afterChar === ' ' || afterChar === '\n' || afterChar === '\t' || afterChar === '\r') {
               if (!longestMatch || key.length > longestMatch.length) {
                 longestMatch = { path: key, length: key.length };
               }
@@ -154,7 +151,8 @@ export function useFileTags({
 
         if (longestMatch) {
           // Found a match from pathMappingRef
-          const spacer = currentText[i + 1 + longestMatch.length] === ' ' ? ' ' : '';
+          const afterChar = currentText[i + 1 + longestMatch.length];
+          const spacer = afterChar === ' ' ? ' ' : '';
           matches.push({
             index: i,
             path: longestMatch.path,
