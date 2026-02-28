@@ -3,13 +3,13 @@ package com.github.claudecodegui.handler;
 import com.github.claudecodegui.ClaudeSession;
 import com.github.claudecodegui.bridge.NodeDetector;
 import com.github.claudecodegui.notifications.ClaudeNotifier;
+import com.github.claudecodegui.util.PlatformUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 
-import javax.swing.*;
 import java.io.File;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -23,11 +23,11 @@ public class SessionHandler extends BaseMessageHandler {
     private static final Logger LOG = Logger.getInstance(SessionHandler.class);
 
     private static final String[] SUPPORTED_TYPES = {
-        "send_message",
-        "send_message_with_attachments",
-        "interrupt_session",
-        "restart_session"
-        // Note: create_new_session should not be handled here; it should be handled by ClaudeSDKToolWindow.createNewSession()
+            "send_message",
+            "send_message_with_attachments",
+            "interrupt_session",
+            "restart_session"
+            // Note: create_new_session should not be handled here; it should be handled by ClaudeSDKToolWindow.createNewSession()
     };
 
     public SessionHandler(HandlerContext context) {
@@ -79,7 +79,7 @@ public class SessionHandler extends BaseMessageHandler {
             int minVersion = NodeDetector.MIN_NODE_MAJOR_VERSION;
             ApplicationManager.getApplication().invokeLater(() -> {
                 callJavaScript("addErrorMessage", escapeJs(
-                    "Node.js 版本过低 (" + nodeVersion + ")，插件需要 v" + minVersion + " 或更高版本才能正常运行。请在设置中配置正确的 Node.js 路径。"));
+                        "Node.js 版本过低 (" + nodeVersion + ")，插件需要 v" + minVersion + " 或更高版本才能正常运行。请在设置中配置正确的 Node.js 路径。"));
             });
             return;
         }
@@ -92,8 +92,8 @@ public class SessionHandler extends BaseMessageHandler {
             Gson gson = new Gson();
             JsonObject payload = gson.fromJson(content, JsonObject.class);
             prompt = payload != null && payload.has("text") && !payload.get("text").isJsonNull()
-                ? payload.get("text").getAsString()
-                : content; // Fallback to raw content if not JSON
+                             ? payload.get("text").getAsString()
+                             : content; // Fallback to raw content if not JSON
 
             // Extract agent prompt from the message
             if (payload != null && payload.has("agent") && !payload.get("agent").isJsonNull()) {
@@ -146,23 +146,23 @@ public class SessionHandler extends BaseMessageHandler {
 
             // [FIX] Pass agent prompt and file tags directly to session
             context.getSession().send(finalPrompt, finalAgentPrompt, finalFileTagPaths)
-                .thenRun(() -> {
-                    // Claude now triggers success on actual stream_end callback.
-                    // Codex has no stream_end event, keep success trigger at completion.
-                    if (project != null && "codex".equals(context.getSession().getProvider())) {
-                        ClaudeNotifier.showSuccess(project, "Task completed");
-                    }
-                })
-                .exceptionally(ex -> {
-                    LOG.error("Failed to send message", ex);
-                    if (project != null) {
-                        ClaudeNotifier.showError(project, "Task failed: " + ex.getMessage());
-                    }
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        callJavaScript("addErrorMessage", escapeJs("发送失败: " + ex.getMessage()));
+                    .thenRun(() -> {
+                        // Claude now triggers success on actual stream_end callback.
+                        // Codex has no stream_end event, keep success trigger at completion.
+                        if (project != null && "codex".equals(context.getSession().getProvider())) {
+                            ClaudeNotifier.showSuccess(project, "Task completed");
+                        }
+                    })
+                    .exceptionally(ex -> {
+                        LOG.error("Failed to send message", ex);
+                        if (project != null) {
+                            ClaudeNotifier.showError(project, "Task failed: " + ex.getMessage());
+                        }
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            callJavaScript("addErrorMessage", escapeJs("发送失败: " + ex.getMessage()));
+                        });
+                        return null;
                     });
-                    return null;
-                });
         });
     }
 
@@ -175,8 +175,8 @@ public class SessionHandler extends BaseMessageHandler {
             Gson gson = new Gson();
             JsonObject payload = gson.fromJson(content, JsonObject.class);
             String text = payload != null && payload.has("text") && !payload.get("text").isJsonNull()
-                ? payload.get("text").getAsString()
-                : "";
+                                  ? payload.get("text").getAsString()
+                                  : "";
 
             java.util.List<ClaudeSession.Attachment> atts = new java.util.ArrayList<>();
             if (payload != null && payload.has("attachments") && payload.get("attachments").isJsonArray()) {
@@ -184,14 +184,14 @@ public class SessionHandler extends BaseMessageHandler {
                 for (int i = 0; i < arr.size(); i++) {
                     JsonObject a = arr.get(i).getAsJsonObject();
                     String fileName = a.has("fileName") && !a.get("fileName").isJsonNull()
-                        ? a.get("fileName").getAsString()
-                        : ("attachment-" + System.currentTimeMillis());
+                                              ? a.get("fileName").getAsString()
+                                              : ("attachment-" + System.currentTimeMillis());
                     String mediaType = a.has("mediaType") && !a.get("mediaType").isJsonNull()
-                        ? a.get("mediaType").getAsString()
-                        : "application/octet-stream";
+                                               ? a.get("mediaType").getAsString()
+                                               : "application/octet-stream";
                     String data = a.has("data") && !a.get("data").isJsonNull()
-                        ? a.get("data").getAsString()
-                        : "";
+                                          ? a.get("data").getAsString()
+                                          : "";
                     atts.add(new ClaudeSession.Attachment(fileName, mediaType, data));
                 }
             }
@@ -247,7 +247,7 @@ public class SessionHandler extends BaseMessageHandler {
             int minVersion = NodeDetector.MIN_NODE_MAJOR_VERSION;
             ApplicationManager.getApplication().invokeLater(() -> {
                 callJavaScript("addErrorMessage", escapeJs(
-                    "Node.js 版本过低 (" + nodeVersion + ")，插件需要 v" + minVersion + " 或更高版本才能正常运行。请在设置中配置正确的 Node.js 路径。"));
+                        "Node.js 版本过低 (" + nodeVersion + ")，插件需要 v" + minVersion + " 或更高版本才能正常运行。请在设置中配置正确的 Node.js 路径。"));
             });
             return;
         }
@@ -271,23 +271,23 @@ public class SessionHandler extends BaseMessageHandler {
 
             // [FIX] Pass agent prompt and file tags directly to session
             context.getSession().send(prompt, attachments, finalAgentPrompt, finalFileTagPaths)
-                .thenRun(() -> {
-                    // Claude now triggers success on actual stream_end callback.
-                    // Codex has no stream_end event, keep success trigger at completion.
-                    if (project != null && "codex".equals(context.getSession().getProvider())) {
-                        ClaudeNotifier.showSuccess(project, "Task completed");
-                    }
-                })
-                .exceptionally(ex -> {
-                    LOG.error("Failed to send message with attachments", ex);
-                    if (project != null) {
-                        ClaudeNotifier.showError(project, "Task failed: " + ex.getMessage());
-                    }
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        callJavaScript("addErrorMessage", escapeJs("发送失败: " + ex.getMessage()));
+                    .thenRun(() -> {
+                        // Claude now triggers success on actual stream_end callback.
+                        // Codex has no stream_end event, keep success trigger at completion.
+                        if (project != null && "codex".equals(context.getSession().getProvider())) {
+                            ClaudeNotifier.showSuccess(project, "Task completed");
+                        }
+                    })
+                    .exceptionally(ex -> {
+                        LOG.error("Failed to send message with attachments", ex);
+                        if (project != null) {
+                            ClaudeNotifier.showError(project, "Task failed: " + ex.getMessage());
+                        }
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            callJavaScript("addErrorMessage", escapeJs("发送失败: " + ex.getMessage()));
+                        });
+                        return null;
                     });
-                    return null;
-                });
         });
     }
 
@@ -322,7 +322,7 @@ public class SessionHandler extends BaseMessageHandler {
 
         // If the project path is invalid, fall back to the user home directory
         if (projectPath == null || !new File(projectPath).exists()) {
-            String userHome = System.getProperty("user.home");
+            String userHome = PlatformUtils.getHomeDirectory();
             LOG.warn("[SessionHandler] Using user home directory as fallback: " + userHome);
             return userHome;
         }
@@ -330,7 +330,7 @@ public class SessionHandler extends BaseMessageHandler {
         // Try to read custom working directory from configuration
         try {
             com.github.claudecodegui.CodemossSettingsService settingsService =
-                new com.github.claudecodegui.CodemossSettingsService();
+                    new com.github.claudecodegui.CodemossSettingsService();
             String customWorkingDir = settingsService.getCustomWorkingDirectory(projectPath);
 
             if (customWorkingDir != null && !customWorkingDir.isEmpty()) {
