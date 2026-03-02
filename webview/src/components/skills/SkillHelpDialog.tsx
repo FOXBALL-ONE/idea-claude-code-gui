@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { copyToClipboard } from '../../utils/copyUtils';
 
@@ -13,6 +14,8 @@ interface SkillHelpDialogProps {
  */
 export function SkillHelpDialog({ onClose, currentProvider = 'claude' }: SkillHelpDialogProps) {
   const { t } = useTranslation();
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
   // Prevent event bubbling
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -20,14 +23,15 @@ export function SkillHelpDialog({ onClose, currentProvider = 'claude' }: SkillHe
     }
   };
 
-  // Copy link and show alert
-  const handleLinkClick = async (e: React.MouseEvent, url: string) => {
+  // Copy link and show brief inline feedback
+  const handleLinkClick = useCallback(async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
     const success = await copyToClipboard(url);
     if (success) {
-      alert(t('mcp.linkCopied'));
+      setCopiedUrl(url);
+      setTimeout(() => setCopiedUrl(null), 2000);
     }
-  };
+  }, []);
 
   const isCodex = currentProvider === 'codex';
   // Use provider-specific i18n key prefix
@@ -141,6 +145,9 @@ export function SkillHelpDialog({ onClose, currentProvider = 'claude' }: SkillHe
                   >
                     {t(`${hp}.learnMore.link1`)}
                   </a>
+                  {copiedUrl === 'https://codex.openai.com/docs/skills' && (
+                    <span style={{ marginLeft: '8px', color: 'var(--vscode-charts-green, #4caf50)', fontSize: '12px' }}>✓ {t('mcp.linkCopied')}</span>
+                  )}
                 </li>
               </ul>
             ) : (
@@ -152,6 +159,9 @@ export function SkillHelpDialog({ onClose, currentProvider = 'claude' }: SkillHe
                   >
                     {t(`${hp}.learnMore.link1`)}
                   </a>
+                  {copiedUrl === 'https://support.claude.com/en/articles/12512176-what-are-skills' && (
+                    <span style={{ marginLeft: '8px', color: 'var(--vscode-charts-green, #4caf50)', fontSize: '12px' }}>✓ {t('mcp.linkCopied')}</span>
+                  )}
                 </li>
                 <li>
                   <a
@@ -160,6 +170,9 @@ export function SkillHelpDialog({ onClose, currentProvider = 'claude' }: SkillHe
                   >
                     {t(`${hp}.learnMore.link2`)}
                   </a>
+                  {copiedUrl === 'https://support.claude.com/en/articles/12512198-creating-custom-skills' && (
+                    <span style={{ marginLeft: '8px', color: 'var(--vscode-charts-green, #4caf50)', fontSize: '12px' }}>✓ {t('mcp.linkCopied')}</span>
+                  )}
                 </li>
                 <li>
                   <a
@@ -168,6 +181,9 @@ export function SkillHelpDialog({ onClose, currentProvider = 'claude' }: SkillHe
                   >
                     {t(`${hp}.learnMore.link3`)}
                   </a>
+                  {copiedUrl === 'https://github.com/anthropics/skills' && (
+                    <span style={{ marginLeft: '8px', color: 'var(--vscode-charts-green, #4caf50)', fontSize: '12px' }}>✓ {t('mcp.linkCopied')}</span>
+                  )}
                 </li>
               </ul>
             )}
