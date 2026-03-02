@@ -134,7 +134,7 @@ MIT
       <a href="https://github.com/gadfly3173">
         <img src="https://avatars.githubusercontent.com/u/28685179?size=100" width="100" height="100" alt="gadfly3173" style="border-radius: 50%; border: 3px solid #ff6b35; box-shadow: 0 0 15px rgba(255, 107, 53, 0.6);" />
       </a>
-      <div">🔥🔥</div>
+      <div">🔥🔥🔥</div>
     </td>
     <td align="center">
       <a href="https://github.com/song782360037">
@@ -238,6 +238,11 @@ MIT
     <td align="center">
       <a href="https://github.com/jhaan83">
         <img src="https://avatars.githubusercontent.com/u/45828854?size=100" width="100" height="100" alt="jhaan83" style="border-radius: 50%;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Olexandr1904">
+        <img src="https://avatars.githubusercontent.com/u/12022163?size=100" width="100" height="100" alt="Olexandr1904" style="border-radius: 50%;" />
       </a>
     </td>
   </tr>
