@@ -39,14 +39,17 @@ public class ChatPasteAction extends ChatToolWindowAction {
                 if (clipboard.isDataFlavorAvailable(DataFlavor.imageFlavor)) {
                     BufferedImage image = (BufferedImage) clipboard.getData(DataFlavor.imageFlavor);
                     if (image != null) {
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        ImageIO.write(image, "png", baos);
-                        String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());
-                        chatWindow.executeJavaScriptCode(
-                            "(function(){" +
-                            "  window.dispatchEvent(new CustomEvent('java-paste-image',{detail:{base64:'" + base64 + "',mediaType:'image/png'}}));" +
-                            "})()"
-                        );
+                        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                            ImageIO.write(image, "png", baos);
+                            String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());
+                            // Use Gson JSON encoding to safely embed base64 data, consistent with text paste below
+                            String jsonBase64 = GSON.toJson(base64);
+                            chatWindow.executeJavaScriptCode(
+                                "(function(){" +
+                                "  window.dispatchEvent(new CustomEvent('java-paste-image',{detail:{base64:" + jsonBase64 + ",mediaType:'image/png'}}));" +
+                                "})()"
+                            );
+                        }
                     }
                 }
                 return;

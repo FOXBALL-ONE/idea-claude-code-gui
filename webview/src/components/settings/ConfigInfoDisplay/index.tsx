@@ -254,10 +254,10 @@ const ConfigInfoDisplay = ({
               </div>
             )}
 
-            {t(`${tutorialBasePath}.noteTitle`) && (
+            {t(`${tutorialBasePath}.noteTitle`) !== '' && (
               <p className={styles.noteTitle}>{t(`${tutorialBasePath}.noteTitle`)}</p>
             )}
-            {t(`${tutorialBasePath}.note1`) && (
+            {t(`${tutorialBasePath}.note1`) !== '' && (
               <p>{t(`${tutorialBasePath}.note1`)}</p>
             )}
 
@@ -379,8 +379,7 @@ const ConfigInfoDisplay = ({
       if (addToast) {
         addToast(t('toast.copySuccess', { label }), 'success');
       }
-    }).catch(err => {
-      console.error('Failed to copy: ', err);
+    }).catch(() => {
       if (addToast) {
         addToast(t('toast.copyFailed'), 'error');
       }
