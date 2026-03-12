@@ -17,6 +17,8 @@ export const CHANGELOG_DATA: ChangelogEntry[] = [
     date: '2026-03-12',
     content: {
       en: `🐛 Fixes
+- Change registrant.npmmirror.com to registry.npmjs.org
+- Change the remote images used to join WeChat groups on the settings page to local images
 - Fix network env vars injection timing: inject proxy and TLS settings before any HTTPS connection to fix corporate SSL-inspection proxy issues, add URL validation and security warning for disabled TLS verification
 
 🔧 Improvements
@@ -27,6 +29,8 @@ export const CHANGELOG_DATA: ChangelogEntry[] = [
 - Refactor useInputHistory: extract pure storage functions to inputHistoryStorage.ts
 - Refactor fileIcons: extract icon maps to fileIconMaps.ts`,
       zh: `🐛 Fixes
+- 将 registry.npmmirror.com 修改为 registry.npmjs.org
+- 将设置页面用于加入微信群的远程图片，改为本地图片
 - 修复网络环境变量注入时机：在任何 HTTPS 连接之前注入代理和 TLS 设置，修复企业 SSL 检查代理问题，新增代理 URL 验证和 TLS 验证禁用安全警告
 
 🔧 Improvements
