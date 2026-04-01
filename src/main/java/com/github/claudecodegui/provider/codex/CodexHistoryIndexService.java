@@ -121,9 +121,16 @@ class CodexHistoryIndexService {
                     .filter(Files::isRegularFile)
                     .filter(path -> path.toString().endsWith(".jsonl"))
                     .filter(path -> {
+                        // Check if ANY indexed session ID is contained in the filename.
+                        // Session IDs are now UUIDs (from session_meta.id) which are embedded
+                        // in filenames like rollout-<timestamp>-<UUID>.jsonl.
                         String fileName = path.getFileName().toString();
-                        String sessionId = fileName.substring(0, fileName.lastIndexOf(".jsonl"));
-                        return !indexedIds.contains(sessionId);
+                        for (String indexedId : indexedIds) {
+                            if (fileName.contains(indexedId)) {
+                                return false;
+                            }
+                        }
+                        return true;
                     })
                     .filter(CodexHistoryParser::isNonEmptyFile)
                     .collect(Collectors.toList());
