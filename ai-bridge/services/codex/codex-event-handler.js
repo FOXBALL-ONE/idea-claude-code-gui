@@ -28,6 +28,11 @@ import {
   logWarn, logInfo, logDebug,
   isAutoEditPermissionMode, isReconnectNotice, emitStatusMessage
 } from './codex-utils.js';
+import {
+  normalizeMcpToolName, normalizeMcpToolInput,
+  parseFunctionCallArguments, normalizeFunctionCallTool,
+  rememberToolInvocation, findMatchingToolUseId,
+} from './codex-tool-normalization.js';
 
 const COMMAND_DENIED_ABORT_ERROR = '__CODEX_COMMAND_DENIED_ABORT__';
 
@@ -43,19 +48,66 @@ function textMsg(text) {
   return { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } };
 }
 
-/** @typedef {Object} EventProcessingState - see createInitialEventState for fields */
+function handleFunctionCallPayload(payload, state) {
+  if (!payload || payload.type !== 'function_call') return false;
+
+  const rawToolName = typeof payload.name === 'string' ? payload.name : '';
+  if (!rawToolName) return false;
+
+  const parsedArguments = parseFunctionCallArguments(payload);
+  const normalizedTool = normalizeFunctionCallTool(rawToolName, parsedArguments);
+  const toolName = normalizedTool.name;
+  const toolInput = normalizedTool.input;
+  const matchedToolUseId = findMatchingToolUseId(state, toolName, toolInput);
+  const toolUseId = matchedToolUseId || (typeof payload.call_id === 'string' && payload.call_id ? payload.call_id : randomUUID());
+
+  if (!state.emittedToolUseIds.has(toolUseId)) {
+    state.emitMessage(toolUseMsg(toolUseId, toolName, toolInput));
+    state.emittedToolUseIds.add(toolUseId);
+  }
+  rememberToolInvocation(state, toolUseId, toolName, toolInput);
+  state.lastFunctionCallToolUseId = toolUseId;
+  return true;
+}
+
+function handleFunctionCallOutputPayload(payload, state) {
+  if (!payload || payload.type !== 'function_call_output') return false;
+  let toolUseId = typeof payload.call_id === 'string' ? payload.call_id : '';
+  if ((!toolUseId || !state.emittedToolUseIds.has(toolUseId)) && state.lastFunctionCallToolUseId) {
+    toolUseId = state.lastFunctionCallToolUseId;
+  }
+  if (!toolUseId || state.emittedToolResultIds.has(toolUseId) || !state.emittedToolUseIds.has(toolUseId)) return false;
+
+  const output = typeof payload.output === 'string' ? payload.output : JSON.stringify(payload.output ?? '(no output)');
+  const isError = payload.status === 'error' ||
+    (typeof output === 'string' && /^error:|failed to parse|permission denied|command denied/i.test(output));
+  const truncatedResult = truncateForDisplay(output, MAX_TOOL_RESULT_CHARS);
+  state.emitMessage(toolResultMsg(toolUseId, isError, truncatedResult && truncatedResult.trim() ? truncatedResult : '(no output)'));
+  state.emittedToolResultIds.add(toolUseId);
+  return true;
+}
+
 
 /** Creates the initial mutable state bag consumed by processCodexEventStream. */
 export function createInitialEventState(emitMessage) {
   return {
     pendingToolUseIds: new Map(),
     emittedToolUseIds: new Set(),
+    emittedToolResultIds: new Set(),
+    toolCallSignatureById: new Map(),
+    toolUseIdBySignature: new Map(),
+    lastFunctionCallToolUseId: null,
     deniedCommandToolUseIds: new Set(),
     emittedDeniedCommandToolResultIds: new Set(),
     sessionFilePath: null,
     sessionLineCursor: 0,
+    sessionFunctionCursor: 0,
+    sessionTurnStartCursor: 0,
     processedPatchCallIds: new Set(),
+    processedSessionFunctionCallIds: new Set(),
+    processedSessionFunctionOutputIds: new Set(),
     reasoningTextCache: new Map(),
+    assistantTextCache: new Map(),
     reasoningObserved: false,
     commandApprovalAbortRequested: false,
     runtimePolicyLogged: false,
@@ -100,6 +152,11 @@ function ensureSessionFilePath(state, threadId) {
   if (!threadId) return null;
   state.sessionFilePath = findSessionFileByThreadId(threadId);
   return state.sessionFilePath;
+}
+
+function countSessionJsonlLines(content) {
+  if (typeof content !== 'string' || !content.length) return 0;
+  return content.split('\n').filter((line) => line.trim()).length;
 }
 
 async function readLatestTurnContextFromSession(state, threadId) {
@@ -164,6 +221,64 @@ async function collectPatchOperationsFromSession(state, config) {
   }
   state.sessionLineCursor = lines.length;
   return batches;
+}
+
+async function replayMissingFunctionCallsFromSession(state, config) {
+  const sessionPath = ensureSessionFilePath(state, config.threadId);
+  if (!sessionPath) return { toolUses: 0, toolResults: 0 };
+
+  let content = '';
+  try { content = await readFile(sessionPath, 'utf8'); } catch (error) {
+    logDebug('SESSION_REPLAY', 'Failed to read session file for function replay:', error?.message || error);
+    return { toolUses: 0, toolResults: 0 };
+  }
+  if (!content.trim()) return { toolUses: 0, toolResults: 0 };
+
+  const lines = content.split('\n');
+  const candidateStartIndexes = [
+    state.sessionFunctionCursor > 0 ? state.sessionFunctionCursor : null,
+    state.sessionTurnStartCursor > 0 ? state.sessionTurnStartCursor : null,
+    Math.max(0, lines.length - SESSION_PATCH_SCAN_MAX_LINES),
+  ].filter((value) => Number.isInteger(value) && value >= 0);
+  const startIndex = candidateStartIndexes.length > 0
+    ? Math.max(...candidateStartIndexes)
+    : Math.max(0, lines.length - SESSION_PATCH_SCAN_MAX_LINES);
+
+  let toolUses = 0;
+  let toolResults = 0;
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || !line.trim()) continue;
+
+    let parsed;
+    try { parsed = JSON.parse(line); } catch { continue; }
+    if (parsed?.type !== 'response_item' || !parsed.payload || typeof parsed.payload !== 'object') continue;
+
+    const payload = parsed.payload;
+    const payloadType = payload.type;
+    if (payloadType === 'function_call') {
+      const callId = typeof payload.call_id === 'string' && payload.call_id ? payload.call_id : `line_${i}`;
+      if (state.processedSessionFunctionCallIds.has(callId)) continue;
+      state.processedSessionFunctionCallIds.add(callId);
+      if (handleFunctionCallPayload(payload, state)) {
+        toolUses += 1;
+      }
+      continue;
+    }
+
+    if (payloadType === 'function_call_output') {
+      const callId = typeof payload.call_id === 'string' && payload.call_id ? payload.call_id : `line_${i}`;
+      if (state.processedSessionFunctionOutputIds.has(callId)) continue;
+      state.processedSessionFunctionOutputIds.add(callId);
+      if (handleFunctionCallOutputPayload(payload, state)) {
+        toolResults += 1;
+      }
+    }
+  }
+
+  state.sessionFunctionCursor = lines.length;
+  return { toolUses, toolResults };
 }
 
 function buildPermissionInputForPatchOperation(operation) {
@@ -253,8 +368,13 @@ function emitSyntheticPatchOperations(state, patchBatches, isError, deniedCallId
       const toolName = op.toolName === 'write' ? 'write' : 'edit';
       if (!state.emittedToolUseIds.has(toolUseId)) {
         state.emitMessage(toolUseMsg(toolUseId, toolName, {
-          file_path: op.filePath, old_string: op.oldString, new_string: op.newString,
-          replace_all: false, source: 'codex_session_patch'
+          file_path: op.filePath,
+          old_string: op.oldString,
+          new_string: op.newString,
+          start_line: op.startLine,
+          end_line: op.endLine,
+          replace_all: false,
+          source: 'codex_session_patch'
         }));
         state.emittedToolUseIds.add(toolUseId);
       }
@@ -277,6 +397,7 @@ function emitSyntheticPatchOperations(state, patchBatches, isError, deniedCallId
 function emitDeniedCommandToolResultOnce(state, toolUseId, messageText = 'Command denied by user') {
   if (!toolUseId || state.emittedDeniedCommandToolResultIds.has(toolUseId)) return;
   state.emitMessage(toolResultMsg(toolUseId, true, messageText));
+  state.emittedToolResultIds.add(toolUseId);
   state.emittedDeniedCommandToolResultIds.add(toolUseId);
 }
 
@@ -303,6 +424,24 @@ async function maybeRequestCommandApprovalViaBridge(state, config, { toolUseId, 
   return false;
 }
 
+function emitThinkingDelta(text) {
+  console.log('[THINKING_DELTA]', text);
+}
+
+function emitContentDelta(text) {
+  console.log('[CONTENT_DELTA]', text);
+}
+
+function extractAppendedDelta(previousText, nextText) {
+  const previous = typeof previousText === 'string' ? previousText : '';
+  const next = typeof nextText === 'string' ? nextText : '';
+  if (!next.trim()) return '';
+  if (!previous) return next;
+  if (next === previous) return '';
+  if (!next.startsWith(previous)) return '';
+  return next.slice(previous.length);
+}
+
 function emitThinkingBlock(state, text) {
   console.log('[THINKING]', text);
   state.emitMessage({
@@ -317,9 +456,14 @@ function maybeEmitReasoning(state, item) {
   const text = raw.trim();
   if (!text) return;
   const stableId = getStableItemId(item) ?? randomUUID();
-  if (state.reasoningTextCache.get(stableId) === text) return;
+  const previousText = state.reasoningTextCache.get(stableId) ?? '';
+  const delta = extractAppendedDelta(previousText, text);
+  if (!delta && previousText === text) return;
   state.reasoningTextCache.set(stableId, text);
   state.reasoningObserved = true;
+  if (delta) {
+    emitThinkingDelta(delta);
+  }
   emitThinkingBlock(state, text);
 }
 
@@ -370,8 +514,15 @@ function handleAgentMessage(item, state) {
   const text = item.text || '';
   console.log('[DEBUG] agent_message text length:', text.length);
   console.log('[DEBUG] agent_message text (first 100 chars):', text.substring(0, 100));
+  const stableId = getStableItemId(item) ?? 'agent_message';
+  const previousText = state.assistantTextCache.get(stableId) ?? '';
+  const delta = extractAppendedDelta(previousText, text);
   state.finalResponse = text;
-  state.assistantText += text;
+  state.assistantTextCache.set(stableId, text);
+  if (delta) {
+    state.assistantText += delta;
+    emitContentDelta(delta);
+  }
   if (text && text.trim()) {
     state.emitMessage(textMsg(text));
   }
@@ -396,6 +547,7 @@ function handleCommandExecution(item, state) {
     state.emittedToolUseIds.add(toolUseId);
   }
   state.emitMessage(toolResultMsg(toolUseId, isError, outputStr && outputStr.trim() ? outputStr : '(no output)'));
+  state.emittedToolResultIds.add(toolUseId);
 }
 
 async function handleFileChange(item, state, config) {
@@ -431,14 +583,17 @@ async function handleFileChange(item, state, config) {
 }
 
 function handleMcpToolCall(item, state) {
-  const toolUseId = item.id || randomUUID();
-  const toolName = `mcp__${item.server}__${item.tool}`;
+  const toolName = normalizeMcpToolName(item.server, item.tool);
+  const toolInput = normalizeMcpToolInput(item.server, item.tool, item.arguments || {});
+  const matchedToolUseId = findMatchingToolUseId(state, toolName, toolInput);
+  const toolUseId = matchedToolUseId || item.id || randomUUID();
   const isError = item.status === 'failed' || !!item.error;
   console.log('[DEBUG] MCP tool call completed:', toolName, 'id:', toolUseId, 'error:', isError);
   if (!state.emittedToolUseIds.has(toolUseId)) {
-    state.emitMessage(toolUseMsg(toolUseId, toolName, item.arguments || {}));
+    state.emitMessage(toolUseMsg(toolUseId, toolName, toolInput));
     state.emittedToolUseIds.add(toolUseId);
   }
+  rememberToolInvocation(state, toolUseId, toolName, toolInput);
   let resultContent = '(no output)';
   if (item.error) {
     resultContent = item.error.message || 'MCP tool call failed';
@@ -454,6 +609,7 @@ function handleMcpToolCall(item, state) {
   }
   const truncatedResult = truncateForDisplay(resultContent, MAX_TOOL_RESULT_CHARS);
   state.emitMessage(toolResultMsg(toolUseId, isError, truncatedResult && truncatedResult.trim() ? truncatedResult : '(no output)'));
+  state.emittedToolResultIds.add(toolUseId);
 }
 
 /**
@@ -480,14 +636,30 @@ export async function processCodexEventStream(events, state, config) {
         state.currentThreadId = event.thread_id;
         state.sessionFilePath = null;
         state.sessionLineCursor = 0;
+        state.sessionFunctionCursor = 0;
+        state.sessionTurnStartCursor = 0;
         state.processedPatchCallIds.clear();
+        state.processedSessionFunctionCallIds.clear();
+        state.processedSessionFunctionOutputIds.clear();
         console.log('[THREAD_ID]', state.currentThreadId);
         break;
       }
 
-      case 'turn.started':
+      case 'turn.started': {
+        const sessionPath = ensureSessionFilePath(state, config.threadId);
+        if (sessionPath && existsSync(sessionPath)) {
+          try {
+            const content = await readFile(sessionPath, 'utf8');
+            state.sessionTurnStartCursor = countSessionJsonlLines(content);
+          } catch {
+            state.sessionTurnStartCursor = state.sessionFunctionCursor;
+          }
+        } else {
+          state.sessionTurnStartCursor = state.sessionFunctionCursor;
+        }
         console.log('[DEBUG] Turn started');
         break;
+      }
 
       case 'item.started': {
         maybeEmitReasoning(state, event.item);
@@ -498,6 +670,7 @@ export async function processCodexEventStream(events, state, config) {
           const description = smartDescription(command);
           state.emitMessage(toolUseMsg(toolUseId, toolName, { command, description }));
           state.emittedToolUseIds.add(toolUseId);
+          rememberToolInvocation(state, toolUseId, toolName, { command, description });
           const allowed = await maybeRequestCommandApprovalViaBridge(
             state, config, { toolUseId, command, smartTool: toolName, description }
           );
@@ -506,11 +679,16 @@ export async function processCodexEventStream(events, state, config) {
             throw new Error(COMMAND_DENIED_ABORT_ERROR);
           }
         } else if (event.item && event.item.type === 'mcp_tool_call') {
-          const toolUseId = event.item.id || randomUUID();
-          const toolName = `mcp__${event.item.server}__${event.item.tool}`;
+          const toolName = normalizeMcpToolName(event.item.server, event.item.tool);
+          const toolInput = normalizeMcpToolInput(event.item.server, event.item.tool, event.item.arguments || {});
+          const matchedToolUseId = findMatchingToolUseId(state, toolName, toolInput);
+          const toolUseId = matchedToolUseId || event.item.id || randomUUID();
           console.log('[DEBUG] MCP tool call started:', toolName, 'id:', toolUseId);
-          state.emitMessage(toolUseMsg(toolUseId, toolName, event.item.arguments || {}));
-          state.emittedToolUseIds.add(toolUseId);
+          if (!state.emittedToolUseIds.has(toolUseId)) {
+            state.emitMessage(toolUseMsg(toolUseId, toolName, toolInput));
+            state.emittedToolUseIds.add(toolUseId);
+          }
+          rememberToolInvocation(state, toolUseId, toolName, toolInput);
         }
         break;
       }
@@ -527,6 +705,10 @@ export async function processCodexEventStream(events, state, config) {
 
       case 'turn.completed': {
         console.log('[DEBUG] Turn completed');
+        const replayed = await replayMissingFunctionCallsFromSession(state, config);
+        if (replayed.toolUses > 0 || replayed.toolResults > 0) {
+          console.log('[DEBUG] Replayed session function calls:', JSON.stringify(replayed));
+        }
         if (event.usage) {
           console.log('[DEBUG] Token usage:', event.usage);
           const claudeUsage = {
@@ -577,6 +759,26 @@ export async function processCodexEventStream(events, state, config) {
       default: {
         const payloadType = event.payload?.type;
         console.log('[DEBUG] Unknown event type:', event.type, 'payload.type:', payloadType);
+
+        if (event.type === 'response_item') {
+          const payload = event.payload;
+          const payloadCallId = typeof payload?.call_id === 'string' && payload.call_id
+            ? payload.call_id
+            : null;
+          if (handleFunctionCallPayload(payload, state)) {
+            if (payloadCallId) {
+              state.processedSessionFunctionCallIds.add(payloadCallId);
+            }
+            break;
+          }
+          if (handleFunctionCallOutputPayload(payload, state)) {
+            if (payloadCallId) {
+              state.processedSessionFunctionOutputIds.add(payloadCallId);
+            }
+            break;
+          }
+        }
+
         if (event.type === 'event_msg' || payloadType === 'function_call' || payloadType === 'function_call_output') {
           console.log('[DEBUG] Full event:', JSON.stringify(event).substring(0, 500));
         }
