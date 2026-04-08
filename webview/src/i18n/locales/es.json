@@ -88,7 +88,8 @@
     "unknownFile": "Unknown file",
     "attachmentsUploaded": "[Archivos adjuntos cargados]",
     "streamingConnected": "Claude conectado, entendiendo tu pregunta",
-    "showEarlierMessages": "Mostrar {{count}} mensajes anteriores"
+    "showEarlierMessages": "Mostrar {{count}} mensajes anteriores",
+    "totalDuration": "Duración Total"
   },
   "settings": {
     "title": "Configuración",

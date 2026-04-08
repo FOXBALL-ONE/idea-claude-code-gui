@@ -88,7 +88,8 @@
     "unknownFile": "Неизвестный файл",
     "attachmentsUploaded": "[Вложения загружены]",
     "streamingConnected": "Claude обрабатывает запрос",
-    "showEarlierMessages": "Показать предыдущие сообщения ({{count}})"
+    "showEarlierMessages": "Показать предыдущие сообщения ({{count}})",
+    "totalDuration": "Общее время"
   },
   "settings": {
     "title": "Настройки",

@@ -88,7 +88,8 @@
     "unknownFile": "알 수 없는 파일",
     "attachmentsUploaded": "[첨부파일 업로드됨]",
     "streamingConnected": "Claude 연결됨, 질문을 이해하는 중",
-    "showEarlierMessages": "이전 메시지 {{count}}개 보기"
+    "showEarlierMessages": "이전 메시지 {{count}}개 보기",
+    "totalDuration": "총 소요 시간"
   },
   "settings": {
     "title": "설정",
