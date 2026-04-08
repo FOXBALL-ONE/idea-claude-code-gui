@@ -119,7 +119,8 @@
         "french": "Français",
         "japanese": "日本語",
         "russian": "Русский",
-        "korean": "한국어"
+        "korean": "한국어",
+        "portuguese": "Português (Brasil)"
       },
       "nodePath": {
         "label": "Chemin Node.js",
