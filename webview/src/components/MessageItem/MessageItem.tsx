@@ -263,10 +263,11 @@ export const MessageItem = memo(function MessageItem({
     }
     return '';
   }, [message, extractMarkdownContent]);
+  const hasCopyableText = markdownContent.trim().length > 0;
 
   const handleCopyMessage = useCallback(async () => {
     // Prevent copying if message is empty or already in "copied" state
-    if (!markdownContent.trim() || copiedMessageIndex === messageIndex) return;
+    if (!hasCopyableText || copiedMessageIndex === messageIndex) return;
 
     const success = await copyToClipboard(markdownContent);
     if (success) {
@@ -283,7 +284,7 @@ export const MessageItem = memo(function MessageItem({
         copyTimeoutRef.current = null;
       }, 1500);
     }
-  }, [markdownContent, messageIndex, copiedMessageIndex]);
+  }, [hasCopyableText, markdownContent, messageIndex, copiedMessageIndex]);
 
   // Cleanup timeout on unmount to prevent memory leaks
   useEffect(() => {
@@ -541,18 +542,20 @@ export const MessageItem = memo(function MessageItem({
           <div className="message-timestamp-header">
             {formatTime(message.timestamp)}
           </div>
-          <CopyButton
-            className="message-copy-btn-inline"
-            isCopied={copiedMessageIndex === messageIndex}
-            onClick={handleCopyMessage}
-            copyLabel={t('markdown.copyMessage')}
-            copySuccessText={t('markdown.copySuccess')}
-          />
+          {hasCopyableText && (
+            <CopyButton
+              className="message-copy-btn-inline"
+              isCopied={copiedMessageIndex === messageIndex}
+              onClick={handleCopyMessage}
+              copyLabel={t('markdown.copyMessage')}
+              copySuccessText={t('markdown.copySuccess')}
+            />
+          )}
         </div>
       )}
 
       {/* Copy button for assistant messages only */}
-      {message.type === 'assistant' && !isMessageStreaming && (
+      {message.type === 'assistant' && !isMessageStreaming && hasCopyableText && (
         <CopyButton
           isCopied={copiedMessageIndex === messageIndex}
           onClick={handleCopyMessage}
